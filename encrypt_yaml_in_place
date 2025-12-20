@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Parse arguments
+FORCE=false
+INPUT_FILE=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -f|--force)
+            FORCE=true
+            shift
+            ;;
+        -*)
+            echo "Error: Unknown option: $1" >&2
+            exit 1
+            ;;
+        *)
+            if [[ -z "$INPUT_FILE" ]]; then
+                INPUT_FILE="$1"
+            else
+                echo "Error: Multiple input files not supported" >&2
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Validate input file is provided
+if [[ -z "$INPUT_FILE" ]]; then
+    echo "Usage: $(basename "$0") [-f|--force] <file>" >&2
+    exit 1
+fi
+
+# Validate input file exists
+if [[ ! -f "$INPUT_FILE" ]]; then
+    echo "Error: File not found: $INPUT_FILE" >&2
+    exit 1
+fi
+
+# Validate file extension (unless --force)
+if [[ "$FORCE" == false && "$INPUT_FILE" != *.yaml ]]; then
+    echo "Error: File must end in .yaml (use --force to override)" >&2
+    exit 1
+fi
+
+# Calculate destination filename
+if [[ "$FORCE" == true && "$INPUT_FILE" != *.yaml ]]; then
+    # Force mode with non-yaml file: append .sops.yaml
+    DEST_FILE="${INPUT_FILE}.sops.yaml"
+else
+    # Normal mode or force with yaml file: replace .yaml with .sops.yaml
+    DEST_FILE="${INPUT_FILE%.yaml}.sops.yaml"
+fi
+
+# Check if destination already exists and is up to date
+if [[ -f "$DEST_FILE" ]]; then
+    # Try to decrypt existing file to memory
+    if DECRYPTED_CONTENT=$(sops decrypt "$DEST_FILE" 2>/dev/null); then
+        # Compare with input file
+        INPUT_CONTENT=$(cat "$INPUT_FILE")
+        if [[ "$DECRYPTED_CONTENT" == "$INPUT_CONTENT" ]]; then
+            echo "Already up to date: $DEST_FILE"
+            exit 0
+        else
+            # Show diff and continue
+            echo "Changes detected:"
+            diff -u <(echo "$DECRYPTED_CONTENT") "$INPUT_FILE" || true
+            echo ""
+        fi
+    else
+        # Decryption failed
+        if [[ "$FORCE" == false ]]; then
+            echo "Error: Failed to decrypt existing file: $DEST_FILE" >&2
+            echo "Use --force to overwrite anyway" >&2
+            exit 1
+        else
+            echo "Warning: Failed to decrypt existing file, overwriting due to --force" >&2
+        fi
+    fi
+fi
+
+# Backup existing destination if it exists
+BACKUP_FILE=""
+if [[ -f "$DEST_FILE" ]]; then
+    BACKUP_FILE="${DEST_FILE}.bak.$$"
+    cp "$DEST_FILE" "$BACKUP_FILE"
+fi
+
+# Cleanup function for error handling
+cleanup_on_error() {
+    if [[ -n "$BACKUP_FILE" && -f "$BACKUP_FILE" ]]; then
+        mv "$BACKUP_FILE" "$DEST_FILE"
+        echo "Restored backup: $DEST_FILE" >&2
+    elif [[ -f "$DEST_FILE" ]]; then
+        rm -f "$DEST_FILE"
+    fi
+}
+
+trap cleanup_on_error ERR
+
+# Copy input to destination
+cp "$INPUT_FILE" "$DEST_FILE"
+
+# Encrypt in place
+sops encrypt -i "$DEST_FILE"
+
+# Success - remove backup if it exists
+if [[ -n "$BACKUP_FILE" && -f "$BACKUP_FILE" ]]; then
+    rm -f "$BACKUP_FILE"
+fi
+
+echo "Encrypted: $INPUT_FILE -> $DEST_FILE"
