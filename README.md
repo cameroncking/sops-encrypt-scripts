@@ -40,3 +40,13 @@ source .env  # Sets SOPS_AGE_KEY_FILE
 2. If encrypted file exists, decrypts and compares with input
 3. If changed (or new), encrypts input → `<name>.sops.yaml`
 4. Removes plaintext input file on success
+
+# Author
+
+[Cameron King](http://cameronking.me)
+
+# License
+
+This software is released under the ISC license.
+
+See `LICENSE` file for details.
