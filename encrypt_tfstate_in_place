@@ -40,18 +40,16 @@ if [[ ! -f "$INPUT_FILE" ]]; then
 fi
 
 # Validate file extension (unless --force)
-if [[ "$FORCE" == false && "$INPUT_FILE" != *.json ]]; then
-    echo "Error: File must end in .json (use --force to override)" >&2
+if [[ "$FORCE" == false && "$INPUT_FILE" != *.tfstate ]]; then
+    echo "Error: File must end in .tfstate (use --force to override)" >&2
     exit 1
 fi
 
 # Calculate destination filename
-if [[ "$FORCE" == true && "$INPUT_FILE" != *.json ]]; then
-    # Force mode with non-json file: append .sops.json
+if [[ "$FORCE" == true && "$INPUT_FILE" != *.tfstate ]]; then
     DEST_FILE="${INPUT_FILE}.sops.json"
 else
-    # Normal mode or force with json file: replace .json with .sops.json
-    DEST_FILE="${INPUT_FILE%.json}.sops.json"
+    DEST_FILE="${INPUT_FILE%.tfstate}.tfstate.sops.json"
 fi
 
 # Check if destination already exists and is up to date
@@ -103,8 +101,8 @@ trap cleanup_on_error ERR
 # Copy input to destination
 cp "$INPUT_FILE" "$DEST_FILE"
 
-# Encrypt in place, matching .sops.yaml creation rules against the source name.
-sops encrypt --filename-override "$INPUT_FILE" -i "$DEST_FILE"
+# Encrypt in place, matching .sops.yaml creation rules against the destination name.
+sops encrypt --filename-override "$DEST_FILE" -i "$DEST_FILE"
 
 # Success - remove backup if it exists
 if [[ -n "$BACKUP_FILE" && -f "$BACKUP_FILE" ]]; then
